@@ -27,6 +27,7 @@ venv/
 ENV/
 
 # Bot Specific
+test_profile/
 spotify_profile/
 screenshots/
 *.log

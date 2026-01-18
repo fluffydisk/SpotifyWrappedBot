@@ -6,3 +6,4 @@ fake-useragent
 setuptools
 webdriver-manager
 playwright
+Pillow

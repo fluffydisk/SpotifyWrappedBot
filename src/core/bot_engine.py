@@ -19,22 +19,24 @@ class SpotifyBot:
         self.running = False
         self.watcher_thread = None
 
-    def launch_native_login(self, browser_type="chrome"):
-        """Launches a native browser for login to bypass detection."""
-        Logger.info(f"Starting NATIVE browser (bypass mode) for login...")
+    def launch_native_login(self):
+        """Launches a controlled browser for login and returns (success, profile_data)."""
+        Logger.info(f"Starting controlled browser for login...")
         profile_dir = self.settings.get('profile_dir', 'spotify_profile')
-        self.login_proc = BrowserManager.launch_native(browser_type, profile_dir)
-        return self.login_proc
+        
+        # This will block until login is detected or window is closed
+        success, profile_data = BrowserManager.launch_controlled_login(profile_dir)
+        
+        if success:
+            Logger.info("Login SUCCESS! Session saved.")
+            return True, profile_data
+        else:
+            Logger.warning("Login was not completed or window was closed.")
+            return False, None
 
     def wait_for_native_login(self):
-        """Waits for the native browser process to finish."""
-        Logger.info("Waiting for you to finish login in the opened browser...")
-        Logger.info("Please login and then CLOSE the browser window when done.")
-        if self.login_proc:
-            self.login_proc.wait()
-            Logger.info("Native browser closed. Login session should be saved.")
-            return True
-        return False
+        """Legacy method, logic now moved into launch_native_login."""
+        return True
 
     def launch_browser(self, headless=False):
         """Launches the browser with user profile."""
@@ -257,8 +259,10 @@ class SpotifyBot:
                 blacklisted_titles = [
                     "app installieren", "install app", "premium", "anmelden", "login", 
                     "startseite", "home", "search", "suche", "bibliothek", "library",
+                    "your library", "deine bibliothek", "kitaplığın", "tu biblioteca",
                     "song", "şarkı", "artist", "sanatçı", "views", "aufrufe", "premium entdecken",
-                    "explore premium", "warteschlange", "queue"
+                    "explore premium", "warteschlange", "queue", "liked songs", "liked",
+                    "create playlist", "playlist erstellen", "playlists", "albums", "podcasts"
                 ]
 
                 for selector in title_selectors:

@@ -1,14 +1,15 @@
 import shutil
 import os
 import logging
+import platform
+import subprocess
+import time
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
 import undetected_chromedriver as uc
-from fake_useragent import UserAgent
-import subprocess
 
 class BrowserManager:
     """
@@ -30,147 +31,265 @@ class BrowserManager:
                     pass
 
     @staticmethod
+    def ensure_browser_installed():
+        """Checks if a browser is available, if not, installs playwright chromium."""
+        chrome = BrowserManager.get_chrome_path()
+        firefox = BrowserManager.get_firefox_path()
+        
+        if not chrome and not firefox:
+            logging.info("No system browser found. Attempting to install Playwright Chromium...")
+            try:
+                import sys
+                subprocess.run([sys.executable, "-m", "pip", "install", "playwright"], check=True)
+                subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+                logging.info("Playwright Chromium installed successfully.")
+                return True
+            except Exception as e:
+                logging.error(f"Failed to install Playwright browser: {e}")
+                return False
+        return True
+
+    @staticmethod
     def find_portable_browser(browser_type="chromium"):
         """
         Looks for browsers installed by Playwright in standard locations.
         """
         home = os.path.expanduser("~")
-        base_path = os.path.join(home, ".cache", "ms-playwright")
+        is_windows = platform.system() == "Windows"
+        
+        if is_windows:
+            base_path = os.path.join(os.getenv("LOCALAPPDATA", ""), "ms-playwright")
+        else:
+            base_path = os.path.join(home, ".cache", "ms-playwright")
         
         if not os.path.exists(base_path):
             return None
             
-        # Search for chromium or firefox folders
         for folder in os.listdir(base_path):
             if folder.startswith(browser_type):
-                # Traverse to binary
                 if browser_type == "chromium":
-                    # chromium-XXXX/chrome-linux/chrome
-                    chrome_bin = os.path.join(base_path, folder, "chrome-linux64", "chrome")
+                    if is_windows:
+                        chrome_bin = os.path.join(base_path, folder, "chrome-win64", "chrome.exe")
+                        if not os.path.exists(chrome_bin):
+                             chrome_bin = os.path.join(base_path, folder, "chrome-win", "chrome.exe")
+                    else:
+                        chrome_bin = os.path.join(base_path, folder, "chrome-linux64", "chrome")
+                        
                     if os.path.exists(chrome_bin):
                         return chrome_bin
                 elif browser_type == "firefox":
-                    # firefox-XXXX/firefox/firefox
-                    firefox_bin = os.path.join(base_path, folder, "firefox", "firefox")
+                    if is_windows:
+                        firefox_bin = os.path.join(base_path, folder, "firefox", "firefox.exe")
+                    else:
+                        firefox_bin = os.path.join(base_path, folder, "firefox", "firefox")
+                        
                     if os.path.exists(firefox_bin):
                         return firefox_bin
         return None
 
     @staticmethod
-    def launch_native(browser_type="chrome", user_data_dir="spotify_profile"):
+    def get_chrome_path():
+        """Returns the detected path to Chrome/Chromium."""
+        is_windows = platform.system() == "Windows"
+        path = shutil.which("google-chrome") or \
+               shutil.which("google-chrome-stable") or \
+               shutil.which("chromium") or \
+               shutil.which("chromium-browser") or \
+               shutil.which("chrome")
+        if path: return path
+        
+        if is_windows:
+            win_paths = [
+                os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Google\\Chrome\\Application\\chrome.exe"),
+                os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Google\\Chrome\\Application\\chrome.exe"),
+                os.path.join(os.environ.get("LocalAppData", ""), "Google\\Chrome\\Application\\chrome.exe")
+            ]
+            for p in win_paths:
+                if os.path.exists(p): return p
+                
+        return BrowserManager.find_portable_browser("chromium")
+
+    @staticmethod
+    def get_firefox_path():
+        """Returns the detected path to Firefox."""
+        is_windows = platform.system() == "Windows"
+        path = shutil.which("firefox")
+        if path: return path
+        
+        if is_windows:
+            win_paths = [
+                os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Mozilla Firefox\\firefox.exe"),
+                os.path.join(os.environ.get("ProgramFiles(x86)", "C:\\Program Files (x86)"), "Mozilla Firefox\\firefox.exe")
+            ]
+            for p in win_paths:
+                if os.path.exists(p): return p
+                
+        return BrowserManager.find_portable_browser("firefox")
+
+    @staticmethod
+    def launch_controlled_login(user_data_dir="spotify_profile"):
         """
-        Launches the browser as a standard system process (not Selenium controlled).
-        This bypasses ALL automation detection, useful for Google/Spotify logins.
+        Launches a Playwright-controlled browser for login.
+        Monitors the URL and closes automatically when success is detected.
         """
+        from playwright.sync_api import sync_playwright
+        
         abs_profile_path = os.path.abspath(user_data_dir)
-        if not os.path.exists(abs_profile_path):
-            os.makedirs(abs_profile_path)
-        else:
-            BrowserManager._cleanup_locks(abs_profile_path)
+        BrowserManager._cleanup_locks(abs_profile_path)
+
+        def run(playwright):
+            chrome_path = BrowserManager.get_chrome_path()
             
-        if browser_type == "chrome":
-            chrome_path = shutil.which("google-chrome") or \
-                          shutil.which("google-chrome-stable") or \
-                          shutil.which("chrome") or \
-                          BrowserManager.find_portable_browser("chromium")
+            launch_args = {
+                "user_data_dir": abs_profile_path,
+                "headless": False,
+                "args": ["--no-first-run", "--no-default-browser-check"]
+            }
             if chrome_path:
-                cmd = [
-                    chrome_path,
-                    f"--user-data-dir={abs_profile_path}",
-                    "--no-first-run",
-                    "--no-default-browser-check",
-                    "https://accounts.spotify.com/en/login"
-                ]
-                return subprocess.Popen(cmd)
-        
-        elif browser_type == "firefox":
-            firefox_path = shutil.which("firefox") or BrowserManager.find_portable_browser("firefox")
-            if firefox_path:
-                cmd = [
-                    firefox_path,
-                    "-profile", abs_profile_path,
-                    "-new-tab", "https://accounts.spotify.com/en/login"
-                ]
-                return subprocess.Popen(cmd)
-        
-        return None
+                launch_args["executable_path"] = chrome_path
+
+            context = None
+            try:
+                context = playwright.chromium.launch_persistent_context(**launch_args)
+                page = context.new_page()
+                page.goto("https://accounts.spotify.com/en/login")
+                
+                logging.info("Controlled login window opened. Waiting for login detection...")
+                
+                start_time = time.time()
+                timeout = 600 # 10 minutes
+                
+                while time.time() - start_time < timeout:
+                    try:
+                        # 1. Check if browser/page is still alive
+                        if page.is_closed():
+                            logging.info("Browser window closed. Assuming user is done/logged in.")
+                            return True, None
+                        
+                        url = page.url.lower()
+                        
+                        # A. Instant URL Detection (Aggressive)
+                        # If we are on a status or account page, it's a 100% success.
+                        if "/status" in url or "/account/overview" in url or "open.spotify.com" in url:
+                            # Final safety: make sure we aren't just starting the login flow
+                            if not url.endswith("/login") and "auth" not in url:
+                                logging.info(f"Login SUCCESS detected via URL: {url}")
+                                
+                                # --- PROFILE DATA EXTRACTION ---
+                                profile_data = {"name": "Spotify User", "avatar": None}
+                                try:
+                                    # Try to get name from status page or main page
+                                    name_elem = page.query_selector("h3, [data-testid='user-widget-link'], .username")
+                                    if name_elem:
+                                        profile_data["name"] = name_elem.inner_text().strip()
+                                    
+                                    # Try to get avatar
+                                    img_elem = page.query_selector("img[data-testid='user-widget-avatar'], .profile-image img")
+                                    if img_elem:
+                                        profile_data["avatar"] = img_elem.get_attribute("src")
+                                except: pass
+                                # -------------------------------
+
+                                time.sleep(2)
+                                try: context.close()
+                                except: pass
+                                return True, profile_data
+
+                        # B. DOM-Based Detection (Multilingual Backup)
+                        try:
+                            is_logged_in = page.evaluate("""() => {
+                                const text = document.body.innerText.toLowerCase();
+                                const indicators = ['abmelden', 'logout', 'log out', 'oturumu kapat', 'angemeldet als', 'logged in as'];
+                                return indicators.some(ind => text.includes(ind)) || 
+                                       !!document.querySelector('[data-testid="user-widget-link"]') ||
+                                       !!document.querySelector('button[aria-label="Profile"]');
+                            }""")
+                            
+                            if is_logged_in:
+                                if "login" not in url and "signup" not in url:
+                                    logging.info("Login SUCCESS detected via Page Content.")
+                                    
+                                    # --- PROFILE DATA EXTRACTION ---
+                                    profile_data = {"name": "Spotify User", "avatar": None}
+                                    try:
+                                        # More detailed extraction logic
+                                        profile_data["name"] = page.evaluate("() => document.querySelector('[data-testid=\"user-widget-link\"]')?.innerText || document.querySelector('h3')?.innerText || 'Spotify User'")
+                                        profile_data["avatar"] = page.evaluate("() => document.querySelector('img[data-testid=\"user-widget-avatar\"]')?.src || document.querySelector('.profile-image img')?.src")
+                                    except: pass
+                                    # -------------------------------
+
+                                    time.sleep(2)
+                                    try: context.close()
+                                    except: pass
+                                    return True, profile_data
+                        except: pass
+
+                        time.sleep(0.5) # Faster polling
+                    except Exception as e:
+                        # Catch EPIPE, "Target closed", etc.
+                        err_str = str(e).lower()
+                        if any(x in err_str for x in ["broken pipe", "connection closed", "target closed"]):
+                            logging.info("Browser connection lost/closed. Proceeding...")
+                            return True, None
+                        break
+            except Exception as e:
+                logging.error(f"Controlled login main loop failed: {e}")
+                return True, None # Fallback: let the user try to proceed
+            finally:
+                if context:
+                    try: context.close()
+                    except: pass
+            
+            return False, None
+
+        try:
+            with sync_playwright() as playwright:
+                return run(playwright)
+        except Exception as e:
+            logging.error(f"Playwright Sync Error: {e}")
+            return True, None # Fallback
 
     @staticmethod
     def launch(headless=False, user_data_dir="spotify_profile"):
         """
         Launches a browser with a persistent profile.
-        Preference: Global Chrome > Playwright Chromium (UC) > Global Firefox > Playwright Firefox.
         """
-        # Use a fixed Desktop User-Agent to avoid mobile app redirects
         user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        
-        # Ensure absolute path for profile
         abs_profile_path = os.path.abspath(user_data_dir)
         if not os.path.exists(abs_profile_path):
             os.makedirs(abs_profile_path)
-            logging.info(f"Created new profile directory: {abs_profile_path}")
 
-        # 1. Try Chrome/Chromium (Global or Portable) with Undetected Chromedriver
-        chrome_path = shutil.which("google-chrome") or \
-                      shutil.which("google-chrome-stable") or \
-                      shutil.which("chromium") or \
-                      shutil.which("chromium-browser") or \
-                      shutil.which("chrome") or \
-                      BrowserManager.find_portable_browser("chromium")
-        
+        chrome_path = BrowserManager.get_chrome_path()
         if chrome_path:
-            logging.info(f"Chrome/Chromium path: {chrome_path}. Launching with profile: {abs_profile_path}")
             options = uc.ChromeOptions()
-            if headless:
-                options.add_argument('--headless')
-            
+            if headless: options.add_argument('--headless')
             options.add_argument('--no-sandbox')
             options.add_argument('--disable-dev-shm-usage')
             options.add_argument('--window-size=1920,1080')
             options.add_argument('--mute-audio')
             options.add_argument(f'--user-agent={user_agent}')
             options.add_argument(f'--user-data-dir={abs_profile_path}')
-            
-            # Additional flags for stability in headless mode
             options.add_argument('--disable-setuid-sandbox')
             options.add_argument('--force-device-scale-factor=1')
             options.add_argument('--disable-infobars')
             options.add_argument('--hide-scrollbars')
             
-            # Cleanup potential lock files from previous crashes
             BrowserManager._cleanup_locks(abs_profile_path)
-
             try:
-                # Basic options for stability
-                driver = uc.Chrome(
-                    options=options,
-                    browser_executable_path=chrome_path,
-                    headless=headless,
-                    use_subprocess=True,
-                    version_main=None # Auto-detect version
-                )
+                driver = uc.Chrome(options=options, browser_executable_path=chrome_path, headless=headless, use_subprocess=True, version_main=None)
                 driver.set_window_size(1920, 1080)
                 return driver
             except Exception as e:
                 logging.warning(f"Chrome UC launch failed: {e}. Trying Firefox...")
 
-        # 2. Try Firefox (Global or Portable) as fallback
-        firefox_path = shutil.which("firefox") or BrowserManager.find_portable_browser("firefox")
+        firefox_path = BrowserManager.get_firefox_path()
         if firefox_path:
-            logging.info(f"Firefox path: {firefox_path}. Launching with profile: {abs_profile_path}")
             options = webdriver.FirefoxOptions()
-            if headless:
-                options.add_argument('--headless')
-            
+            if headless: options.add_argument('--headless')
             options.binary_location = firefox_path
             options.set_preference("general.useragent.override", user_agent)
-            
-            # Firefox profile path setting
             options.add_argument("-profile")
             options.add_argument(abs_profile_path)
-            options.add_argument('--width=1920')
-            options.add_argument('--height=1080')
-            
             try:
                 service = FirefoxService(GeckoDriverManager().install())
                 driver = webdriver.Firefox(service=service, options=options)
@@ -179,4 +298,4 @@ class BrowserManager:
             except Exception as e:
                 logging.error(f"Firefox launch failed: {e}")
 
-        raise FileNotFoundError("Could not find any browser (Chrome/Chromium/Firefox), even after attempting portable download.")
+        raise FileNotFoundError("Could not find any browser.")
