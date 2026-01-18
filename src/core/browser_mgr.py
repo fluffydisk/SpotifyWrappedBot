@@ -178,16 +178,65 @@ class BrowserManager:
                                 # --- PROFILE DATA EXTRACTION ---
                                 profile_data = {"name": "Spotify User", "avatar": None}
                                 try:
-                                    # Try to get name from status page or main page
-                                    name_elem = page.query_selector("h3, [data-testid='user-widget-link'], .username")
-                                    if name_elem:
-                                        profile_data["name"] = name_elem.inner_text().strip()
+                                    # Wait a bit for elements to load
+                                    page.wait_for_selector("[data-testid='user-widget-link'], h3, .username, p", timeout=5000)
                                     
-                                    # Try to get avatar
-                                    img_elem = page.query_selector("img[data-testid='user-widget-avatar'], .profile-image img")
-                                    if img_elem:
-                                        profile_data["avatar"] = img_elem.get_attribute("src")
+                                    profile_data = page.evaluate("""() => {
+                                        const getCleanName = (raw) => {
+                                            if (!raw) return null;
+                                            let text = raw.trim();
+                                            
+                                            // 1. Remove localized "Logged in as" prefixes
+                                            const prefixes = [/logged in as/i, /account/i];
+                                            for (let reg of prefixes) {
+                                                if (reg.test(text)) {
+                                                    text = text.replace(reg, '').trim();
+                                                }
+                                            }
+
+                                            // 2. Take first line and clean
+                                            let name = text.split('\\n')[0].trim();
+                                            
+                                            // 3. Blacklist of UI words that definitely aren't names
+                                            const blacklist = [
+                                                'account overview', 'webplayer', 'logout', 'premium', 'support', 
+                                                'logged in as', 'home', 'search', 'library', 'your library'
+                                            ];
+                                            
+                                            if (blacklist.some(word => name.toLowerCase() === word || name.toLowerCase().includes(word))) return null;
+                                            if (name.length < 2) return null;
+                                            
+                                            return name;
+                                        };
+
+                                        // Try various selectors in order of reliability
+                                        let name = getCleanName(document.querySelector('[data-testid="user-widget-link"]')?.innerText) ||
+                                                   getCleanName(document.querySelector('h1')?.innerText) ||
+                                                   getCleanName(document.querySelector('h3')?.innerText);
+
+                                        if (!name) {
+                                            // Fallback for account pages (search all text elements)
+                                            const elements = Array.from(document.querySelectorAll('p, span, div, h1, h2, h3'));
+                                            for (let el of elements) {
+                                                let cleaned = getCleanName(el.innerText);
+                                                if (cleaned && cleaned.length > 0 && cleaned.length < 30) {
+                                                    // Check if it's not a generic button text
+                                                    if (el.tagName !== 'BUTTON') {
+                                                        name = cleaned;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        let avatar = document.querySelector('img[data-testid="user-widget-avatar"], .profile-image img, img[alt*="profile"]')?.src;
+                                        
+                                        return { name: name || 'Spotify User', avatar };
+                                    }""")
                                 except: pass
+                                # -------------------------------
+                                # -------------------------------
+                                # -------------------------------
                                 # -------------------------------
 
                                 time.sleep(2)
@@ -199,7 +248,7 @@ class BrowserManager:
                         try:
                             is_logged_in = page.evaluate("""() => {
                                 const text = document.body.innerText.toLowerCase();
-                                const indicators = ['abmelden', 'logout', 'log out', 'oturumu kapat', 'angemeldet als', 'logged in as'];
+                                const indicators = ['logout', 'log out', 'logged in as'];
                                 return indicators.some(ind => text.includes(ind)) || 
                                        !!document.querySelector('[data-testid="user-widget-link"]') ||
                                        !!document.querySelector('button[aria-label="Profile"]');
@@ -212,9 +261,38 @@ class BrowserManager:
                                     # --- PROFILE DATA EXTRACTION ---
                                     profile_data = {"name": "Spotify User", "avatar": None}
                                     try:
-                                        # More detailed extraction logic
-                                        profile_data["name"] = page.evaluate("() => document.querySelector('[data-testid=\"user-widget-link\"]')?.innerText || document.querySelector('h3')?.innerText || 'Spotify User'")
-                                        profile_data["avatar"] = page.evaluate("() => document.querySelector('img[data-testid=\"user-widget-avatar\"]')?.src || document.querySelector('.profile-image img')?.src")
+                                        page.wait_for_selector("[data-testid='user-widget-link'], h3, .username, p", timeout=3000)
+                                        profile_data = page.evaluate("""() => {
+                                            const getCleanName = (raw) => {
+                                                if (!raw) return null;
+                                                let text = raw.trim();
+                                                const prefixes = [/logged in as/i];
+                                                for (let reg of prefixes) {
+                                                    if (reg.test(text)) text = text.replace(reg, '').trim();
+                                                }
+                                                let name = text.split('\\n')[0].trim();
+                                                const blacklist = ['account overview', 'webplayer', 'logout', 'premium', 'support', 'logged in as', 'library', 'your library'];
+                                                if (blacklist.some(word => name.toLowerCase() === word || name.toLowerCase().includes(word))) return null;
+                                                return name;
+                                            };
+
+                                            let name = getCleanName(document.querySelector('[data-testid="user-widget-link"]')?.innerText) ||
+                                                       getCleanName(document.querySelector('h1')?.innerText) ||
+                                                       getCleanName(document.querySelector('h3')?.innerText);
+
+                                            if (!name) {
+                                                const elements = Array.from(document.querySelectorAll('p, span, div, h1, h2, h3'));
+                                                for (let el of elements) {
+                                                    let cleaned = getCleanName(el.innerText);
+                                                    if (cleaned && cleaned.length > 0 && cleaned.length < 30) {
+                                                        if (el.tagName !== 'BUTTON') { name = cleaned; break; }
+                                                    }
+                                                }
+                                            }
+
+                                            let avatar = document.querySelector('img[data-testid="user-widget-avatar"], .profile-image img, img[alt*="profile"]')?.src;
+                                            return { name: name || 'Spotify User', avatar };
+                                        }""")
                                     except: pass
                                     # -------------------------------
 

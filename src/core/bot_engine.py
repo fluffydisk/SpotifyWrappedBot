@@ -255,14 +255,13 @@ class SpotifyBot:
                     "h1", # Last resort H1
                 ]
                 
-                # Phrases to ignore as titles (UI elements) - Use lowercase exact matches or specific common UI text
+                # Phrases to ignore as titles (UI elements)
                 blacklisted_titles = [
-                    "app installieren", "install app", "premium", "anmelden", "login", 
-                    "startseite", "home", "search", "suche", "bibliothek", "library",
-                    "your library", "deine bibliothek", "kitaplığın", "tu biblioteca",
-                    "song", "şarkı", "artist", "sanatçı", "views", "aufrufe", "premium entdecken",
-                    "explore premium", "warteschlange", "queue", "liked songs", "liked",
-                    "create playlist", "playlist erstellen", "playlists", "albums", "podcasts"
+                    "install app", "premium", "login", 
+                    "home", "search", "library",
+                    "your library", "song", "artist", "views",
+                    "explore premium", "queue", "liked songs", "liked",
+                    "create playlist", "playlists", "albums", "podcasts"
                 ]
 
                 for selector in title_selectors:
@@ -314,12 +313,7 @@ class SpotifyBot:
             pause_indicators = [
                 "button[data-testid='control-button-pause']",
                 "button[aria-label='Pause']",
-                "button[aria-label='Pause'] svg",
-                "button[aria-label='Duraklat']",
-                "button[aria-label='Abbrechen']", # German for pause? No, that's cancel. 
-                "button[aria-label='Anhalten']", # German for stay
                 "[data-testid='now-playing-menu'] [aria-label='Pause']",
-                ".mWP_S_ms_e_p_p_a_u_s_e", # Obfuscated
                 "button > svg > path[d*='M5.7 3h-1.4v18h1.4v-18zm8.3 0h-1.4v18h1.4v-18z']" # Universal Pause Path
             ]
             
@@ -386,10 +380,7 @@ class SpotifyBot:
             "button[data-testid='play-button']", # Large Circle Play
             "button[data-testid='control-button-play']", # Bottom Bar Play
             "button[aria-label='Play']",
-            "button[aria-label='Oynat']",
-            "button[aria-label='Abspielen']", # German
             "main button[aria-label*='Play']",
-            "main button[aria-label*='Oynat']",
             "button > svg > path[d*='M7.05 3.606l13.49 7.79a.7.7 0 010 1.208l-13.49 7.79a.7.7 0 01-1.05-.604V4.21a.7.7 0 011.05-.604z']" # Play Path
         ]
         
@@ -409,7 +400,7 @@ class SpotifyBot:
                 for btn in elements:
                     if btn.is_displayed():
                         label = btn.get_attribute("aria-label")
-                        if label and any(x in label for x in ["Pause", "Duraklat", "Anhalten"]):
+                        if label and "Pause" in label:
                             Logger.debug(f"Playback already active (indicated by button label: '{label}')")
                             return True
                             
@@ -435,8 +426,8 @@ class SpotifyBot:
             if not btn_elements: return
             
             btn = btn_elements[0]
-            # Common labels for "Repeat One" (English and German)
-            target_labels = ["Enable repeat one", "Titel wiederholen", "Teke düşür", "Repeat one"]
+            # Common labels for "Repeat One"
+            target_labels = ["Enable repeat one", "Repeat one"]
             
             # Max 3 clicks to cycle through Off -> All -> One
             for _ in range(3):
@@ -465,7 +456,7 @@ class SpotifyBot:
             btn = btn_elements[0]
             label = btn.get_attribute("aria-label")
             # Common labels for "Unmute" (meaning it's currently muted)
-            muted_labels = ["Unmute", "Sesi aç", "Stummschaltung aufheben"]
+            muted_labels = ["Unmute"]
             
             if any(target.lower() in label.lower() for target in muted_labels):
                 Logger.debug("Spotify UI is already MUTED.")
@@ -488,7 +479,6 @@ class SpotifyBot:
             "a[href*='/premium']",
             "button[aria-label*='Premium']",
             "button[aria-label*='Upgrade']",
-            "//*[contains(text(), 'Premium'u Keşfet')]",
             "//*[contains(text(), 'Explore Premium')]"
         ]
         
@@ -504,7 +494,7 @@ class SpotifyBot:
                         # Extra check: sometimes "Premium" is just in the name but not the button.
                         # We look for "Explore", "Upgrade", "Buy" etc.
                         txt = e.text.lower()
-                        if any(x in txt for x in ["premium", "upgrade", "keşfet", "explore", "buy", "purchase"]):
+                        if any(x in txt for x in ["premium", "upgrade", "explore", "buy", "purchase"]):
                             Logger.info(f"Account Type: FREE (Indicator found: '{selector}')")
                             return False
             except: pass

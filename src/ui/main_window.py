@@ -122,49 +122,110 @@ class MainWindow(ctk.CTk):
             child.destroy()
             
         if not profile_data:
-            # Show Spotify-style Login Button
-            login_btn = ctk.CTkButton(
+            self.login_btn = ctk.CTkButton(
                 self.profile_wrapper,
                 text="Log In",
                 font=ctk.CTkFont(size=13, weight="bold"),
-                fg_color="#FFFFFF",     # Spotify White
+                fg_color="#FFFFFF",
                 hover_color="#F0F0F0",
-                text_color="#000000",   # Black text
+                text_color="#000000",
                 height=32,
                 width=80,
-                corner_radius=16,       # Pill shape
+                corner_radius=16,
                 command=self.on_launch_click
             )
-            login_btn.pack()
+            self.login_btn.pack()
+            self.profile_menu_visible = False
         else:
-            # Show User Profile
+            self.login_btn = None
             name = profile_data.get("name", "User")
             avatar_url = profile_data.get("avatar")
             
-            # Profile Container
-            profile_card = ctk.CTkFrame(self.profile_wrapper, fg_color=COLORS["bg_card"], height=40, corner_radius=20)
-            profile_card.pack(padx=2, pady=2)
+            # 1. Profile Card (Clickable)
+            self.profile_card = ctk.CTkFrame(self.profile_wrapper, fg_color=COLORS["bg_card"], height=40, corner_radius=20, cursor="hand2")
+            self.profile_card.pack(side="top", anchor="e")
             
             # Avatar
             if avatar_url:
                 try:
                     response = requests.get(avatar_url, timeout=5)
                     img_data = Image.open(BytesIO(response.content))
-                    # Circular crop (simplified by customtkinter rounding if we use an image)
-                    avatar_img = ctk.CTkImage(light_image=img_data, dark_image=img_data, size=(30, 30))
-                    avatar_lbl = ctk.CTkLabel(profile_card, image=avatar_img, text="")
+                    avatar_img = ctk.CTkImage(light_image=img_data, dark_image=img_data, size=(28, 28))
+                    avatar_lbl = ctk.CTkLabel(self.profile_card, image=avatar_img, text="")
                     avatar_lbl.pack(side="right", padx=(5, 5))
+                    avatar_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
                 except:
-                    # Fallback icon or initial
-                    avatar_lbl = ctk.CTkLabel(profile_card, text=name[0].upper(), fg_color=COLORS["accent_primary"], text_color=COLORS["bg_dark"], width=30, height=30, corner_radius=15)
+                    avatar_lbl = ctk.CTkLabel(self.profile_card, text=name[0].upper(), fg_color=COLORS["accent_primary"], text_color=COLORS["bg_dark"], width=28, height=28, corner_radius=14)
                     avatar_lbl.pack(side="right", padx=(5, 5))
+                    avatar_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
             else:
-                avatar_lbl = ctk.CTkLabel(profile_card, text=name[0].upper(), fg_color=COLORS["accent_primary"], text_color=COLORS["bg_dark"], width=30, height=30, corner_radius=15)
+                avatar_lbl = ctk.CTkLabel(self.profile_card, text=name[0].upper(), fg_color=COLORS["accent_primary"], text_color=COLORS["bg_dark"], width=28, height=28, corner_radius=14)
                 avatar_lbl.pack(side="right", padx=(5, 5))
+                avatar_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
                 
             # Name
-            name_lbl = ctk.CTkLabel(profile_card, text=name, font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["text_primary"])
+            name_lbl = ctk.CTkLabel(self.profile_card, text=name, font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["text_primary"])
             name_lbl.pack(side="left", padx=(15, 5))
+            name_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
+
+            # Bind click event to card itself
+            self.profile_card.bind("<Button-1>", lambda e: self._toggle_profile_menu())
+
+            # 2. Dropdown Menu (Hidden by default)
+            # Use main_frame as parent for easier relative positioning
+            self.profile_menu = ctk.CTkFrame(
+                self.main_frame, 
+                fg_color=COLORS["bg_card"], 
+                border_width=1, 
+                border_color=COLORS["border"], 
+                corner_radius=8,
+                width=120,
+                height=40  # Compact height for a single menu item
+            )
+            self.profile_menu.pack_propagate(False) # Keep fixed size
+            self.profile_menu_visible = False
+            
+            # Logout option in menu
+            self.menu_logout_btn = ctk.CTkButton(
+                self.profile_menu,
+                text="Log out",
+                font=ctk.CTkFont(size=13),
+                fg_color="transparent",
+                hover_color=COLORS["bg_dark"],
+                text_color=COLORS["text_primary"],
+                anchor="w",
+                height=32,
+                corner_radius=4,
+                command=self.on_logout_click
+            )
+            self.menu_logout_btn.pack(fill="x", padx=4, pady=4)
+
+    def _toggle_profile_menu(self):
+        """Toggles the visibility of the profile dropdown menu."""
+        if not hasattr(self, 'profile_menu'): return
+        
+        if self.profile_menu_visible:
+            self.profile_menu.place_forget()
+            self.profile_menu_visible = False
+        else:
+            self.update_idletasks()
+            
+            # Get geometry of wrapper relative to its parent (header_frame)
+            # which is at the top of main_frame
+            wrapper_w = self.profile_wrapper.winfo_width()
+            wrapper_h = self.profile_wrapper.winfo_height()
+            
+            # Menu width
+            menu_width = 120
+            
+            # Position it at the very right edge of the window (relative to main_frame)
+            # The profile_wrapper is placed at relx=1.0 in header_frame
+            x = self.main_frame.winfo_width() - menu_width
+            y = wrapper_h + 5 # Just below the profile wrapper
+            
+            self.profile_menu.place(x=x, y=y)
+            self.profile_menu.lift()
+            self.profile_menu_visible = True
 
     def _build_inputs(self):
         """Builds the styled input fields."""
@@ -246,28 +307,13 @@ class MainWindow(ctk.CTk):
         self.status_label.pack(anchor="center")
 
     def _build_buttons(self):
-        """Builds the action buttons with modern styling."""
+        """Builds the action buttons (Start/Stop) with modern styling."""
         buttons_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         buttons_frame.pack(fill="x", pady=(0, 20))
         
-        # Configure grid for equal spacing
+        # Configure grid/columns
         buttons_frame.columnconfigure(0, weight=1)
         buttons_frame.columnconfigure(1, weight=1)
-        buttons_frame.columnconfigure(2, weight=1)
-        
-        # Launch Browser Button (Primary Action)
-        self.launch_btn = ctk.CTkButton(
-            buttons_frame,
-            text="🚀  Launch Browser",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            height=48,
-            corner_radius=10,
-            fg_color=COLORS["accent_primary"],
-            hover_color=COLORS["accent_secondary"],
-            text_color=COLORS["bg_dark"],
-            command=self.on_launch_click
-        )
-        self.launch_btn.grid(row=0, column=0, padx=(0, 8), sticky="ew")
         
         # Start Bot Button
         self.start_btn = ctk.CTkButton(
@@ -284,7 +330,7 @@ class MainWindow(ctk.CTk):
             command=self.on_start_click,
             state="disabled"
         )
-        self.start_btn.grid(row=0, column=1, padx=8, sticky="ew")
+        self.start_btn.grid(row=0, column=0, padx=(0, 8), sticky="ew")
         
         # Stop Button (Danger)
         self.stop_btn = ctk.CTkButton(
@@ -299,7 +345,7 @@ class MainWindow(ctk.CTk):
             command=self.on_stop_click,
             state="disabled"
         )
-        self.stop_btn.grid(row=0, column=2, padx=(8, 0), sticky="ew")
+        self.stop_btn.grid(row=0, column=1, padx=(8, 0), sticky="ew")
 
     def _build_terminal(self):
         """Builds the terminal-like log area."""
@@ -381,7 +427,8 @@ class MainWindow(ctk.CTk):
     # ══════════════════════════════════════════════════════════════════════════
     def on_launch_click(self):
         self._set_status("Checking browsers...", COLORS["text_secondary"])
-        self.launch_btn.configure(state="disabled")
+        if hasattr(self, 'login_btn') and self.login_btn:
+            self.login_btn.configure(state="disabled")
         threading.Thread(target=self._login_task, daemon=True).start()
 
     def _login_task(self):
@@ -390,7 +437,8 @@ class MainWindow(ctk.CTk):
             if not BrowserManager.ensure_browser_installed():
                 Logger.error("No browser found. Install Chrome or Firefox.")
                 self.after(0, lambda: self._set_status("No Browser Found", COLORS["danger"]))
-                self.after(0, lambda: self.launch_btn.configure(state="normal"))
+                if hasattr(self, 'login_btn') and self.login_btn:
+                    self.after(0, lambda: self.login_btn.configure(state="normal"))
                 return
 
             if not self.bot:
@@ -409,11 +457,13 @@ class MainWindow(ctk.CTk):
                 self.after(0, lambda: self.stop_btn.configure(state="normal"))
             else:
                 self.after(0, lambda: self._set_status("Login Failed", COLORS["danger"]))
-                self.after(0, lambda: self.launch_btn.configure(state="normal"))
+                if hasattr(self, 'login_btn') and self.login_btn:
+                    self.after(0, lambda: self.login_btn.configure(state="normal"))
 
         except Exception as e:
             Logger.error(f"Login error: {e}")
-            self.after(0, lambda: self.launch_btn.configure(state="normal"))
+            if hasattr(self, 'login_btn') and self.login_btn:
+                self.after(0, lambda: self.login_btn.configure(state="normal"))
             self.after(0, lambda: self._set_status("Error", COLORS["danger"]))
 
     def on_start_click(self):
@@ -444,10 +494,39 @@ class MainWindow(ctk.CTk):
             self._set_status("Stopped (Session Active)", COLORS["text_secondary"])
             self.start_btn.configure(state="normal")
             self.stop_btn.configure(state="normal")
-            # Keep launch_btn disabled since we're already logged in
-            self.launch_btn.configure(state="disabled")
         else:
             self._set_status("Stopped", COLORS["text_muted"])
-            self.launch_btn.configure(state="normal")
             self.start_btn.configure(state="disabled")
             self.stop_btn.configure(state="disabled")
+
+    def on_logout_click(self):
+        """Clears the session and returns to login state."""
+        import shutil
+        import os
+        
+        if self.bot and self.bot.running:
+            self.bot.stop_session()
+        
+        # Reset state
+        self.logged_in = False
+        if self.bot:
+            self.bot.profile_info = None
+            
+        # UI Cleanup
+        if hasattr(self, 'profile_menu') and self.profile_menu:
+            self.profile_menu.place_forget()
+            
+        self._update_profile_ui(None)
+        self._set_status("Logged Out", COLORS["text_muted"])
+        self.start_btn.configure(state="disabled")
+        self.stop_btn.configure(state="disabled")
+        
+        # Optional: Delete profile folder to allow clean switching
+        try:
+            profile_dir = "spotify_profile"
+            if os.path.exists(profile_dir):
+                shutil.rmtree(profile_dir)
+                Logger.info("Logged out and profile cleared.")
+        except Exception as e:
+            Logger.debug(f"Profile cleanup failed: {e}")
+            Logger.info("Logged out.")
