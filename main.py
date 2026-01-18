@@ -1,4 +1,5 @@
 import sys
+import multiprocessing
 from src.utils.logger import Logger
 from src.ui.main_window import MainWindow
 
@@ -8,6 +9,8 @@ def main():
     """
     Main entry point for the Spotify Wrapped Bot application.
     """
+    multiprocessing.freeze_support()
+    
     # Initialize Logger
     Logger.init()
     Logger.info("Application starting...")
