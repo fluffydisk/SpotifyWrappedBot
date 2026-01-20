@@ -94,11 +94,42 @@ class Logger:
     def capture_screenshot(browser, name_prefix="error"):
         """
         Captures a screenshot for debugging purposes.
+        Also checks and enforces Spotify UI mute status.
         """
+        # First, check and ensure Spotify is muted
+        volume_status = "Unknown"
+        try:
+            from selenium.webdriver.common.by import By
+            selector = "button[data-testid='control-button-mute']"
+            btn_elements = browser.find_elements(By.CSS_SELECTOR, selector)
+            
+            if btn_elements:
+                btn = btn_elements[0]
+                label = btn.get_attribute("aria-label") or ""
+                
+                # Check if currently muted
+                muted_labels = ["unmute", "sesi aç", "stummschaltung aufheben"]
+                is_muted = any(target in label.lower() for target in muted_labels)
+                
+                if is_muted:
+                    volume_status = "✓ MUTED"
+                    Logger.debug("Volume check: Spotify UI is MUTED ✓")
+                else:
+                    volume_status = "⚠ NOT MUTED - Auto-muting"
+                    Logger.warning("Volume check: Spotify UI was NOT muted! Fixing...")
+                    browser.execute_script("arguments[0].click();", btn)
+                    Logger.info("Spotify UI re-muted for safety")
+            else:
+                volume_status = "No volume control found"
+        except Exception as e:
+            volume_status = f"Error checking: {e}"
+            Logger.debug(f"Volume check failed: {e}")
+        
+        # Capture screenshot
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{Logger._screenshot_dir}/{name_prefix}_{timestamp}.png"
         try:
             browser.save_screenshot(filename)
-            Logger.info(f"Screenshot saved: {filename}")
+            Logger.info(f"Screenshot saved: {filename} | Volume: {volume_status}")
         except Exception as e:
             Logger.error(f"Failed to capture screenshot: {e}")

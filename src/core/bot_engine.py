@@ -1,6 +1,8 @@
 import time
 import random
 import threading
+import json
+import os
 from src.core.browser_mgr import BrowserManager
 from src.utils.logger import Logger
 from src.utils.humanizer import Humanizer
@@ -18,6 +20,12 @@ class SpotifyBot:
         self.browser = None
         self.running = False
         self.watcher_thread = None
+        
+        # Playlist sequential playback state
+        self.is_playlist_mode = False
+        self.playlist_tracks = []
+        self.current_track_index = 0
+        self.playlist_state_file = "playlist_state.json"
 
     def launch_native_login(self):
         """Launches a controlled browser for login and returns (success, profile_data)."""
@@ -75,12 +83,59 @@ class SpotifyBot:
                 url = self.browser.current_url
                 if "open.spotify.com" in url or ("accounts.spotify.com" not in url and "spotify.com" in url):
                     Logger.info("Login detected!")
+                    Logger.info("Login detected. Session active!")
                     return True
             except:
                 pass
             time.sleep(2)
         Logger.error("Login timed out.")
         return False
+
+    def _extract_playlist_tracks(self, playlist_url):
+        """Extracts all track URLs from a Spotify playlist."""
+        Logger.info(f"Extracting tracks from playlist: {playlist_url}")
+        
+        if not self.browser:
+            Logger.error("Browser not available for playlist extraction")
+            return []
+        
+        try:
+            self.browser.get(playlist_url)
+            Humanizer.random_sleep(5, 8)
+            
+            # Scroll to load all tracks (Spotify lazy-loads)
+            Logger.debug("Scrolling to load all tracks...")
+            for _ in range(3):
+                self.browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+            
+            # Extract track links
+            track_elements = self.browser.find_elements(By.CSS_SELECTOR, 'a[href*="/track/"]')
+            
+            tracks = []
+            seen_urls = set()
+            
+            for elem in track_elements:
+                try:
+                    track_url = elem.get_attribute('href')
+                    if track_url and '/track/' in track_url and track_url not in seen_urls:
+                        # Extract track name from aria-label or text
+                        track_name = elem.get_attribute('aria-label') or elem.text or "Unknown"
+                        
+                        tracks.append({
+                            "url": track_url,
+                            "name": track_name.strip()
+                        })
+                        seen_urls.add(track_url)
+                except:
+                    continue
+            
+            Logger.info(f"Extracted {len(tracks)} unique tracks from playlist")
+            return tracks
+            
+        except Exception as e:
+            Logger.error(f"Failed to extract playlist tracks: {e}")
+            return []
 
     def start_watcher(self):
         """Starts a background thread to handle popups and interruptions."""
@@ -136,8 +191,25 @@ class SpotifyBot:
             Logger.error("Browser not launched!")
             return
 
+        # Detect if this is a playlist URL
+        self.is_playlist_mode = '/playlist/' in target_url
+        
+        if self.is_playlist_mode:
+            Logger.info(f"Playlist mode detected. Extracting tracks from: {target_url}")
+            self.playlist_tracks = self._extract_playlist_tracks(target_url)
+            
+            if not self.playlist_tracks:
+                Logger.error("No tracks found in playlist. Falling back to single URL mode.")
+                self.is_playlist_mode = False
+            else:
+                self.current_track_index = 0
+                target_url = self.playlist_tracks[0]["url"]
+                Logger.info(f"Starting playlist playback with {len(self.playlist_tracks)} tracks")
+                Logger.info(f"First track: {self.playlist_tracks[0]['name']}")
+
         Logger.info(f"Starting automation loop for: {target_url}")
         self.running = True
+        last_screenshot_time = 0  # Track screenshot timing
         
         while self.running:
             try:
@@ -199,6 +271,13 @@ class SpotifyBot:
                 while time.time() - start_wait < listen_time:
                     if not self.running: break
                     
+                    # Screenshot every 15 seconds
+                    if time.time() - last_screenshot_time >= 15:
+                        temp_browser = self.browser
+                        if self.running and temp_browser:
+                            Logger.capture_screenshot(temp_browser, "periodic_check")
+                            last_screenshot_time = time.time()
+                    
                     # For Free accounts, monitor playback progress aggressively
                     if not self.is_premium and time.time() - last_check > 5:
                         last_check = time.time()
@@ -220,12 +299,18 @@ class SpotifyBot:
                     if random.random() < 0.05:
                         Humanizer.perform_random_mouse_movements(self.browser, count=1)
                 
-                # 5. Periodic Visual Verification
-                temp_browser = self.browser
-                if self.running and temp_browser:
-                    Logger.capture_screenshot(temp_browser, "visual_check")
-                
-                Logger.info(f"Listen cycle finished for {title}. Restarting for loop...")
+                # Handle playlist track transitions
+                if self.is_playlist_mode:
+                    self.current_track_index += 1
+                    if self.current_track_index >= len(self.playlist_tracks):
+                        self.current_track_index = 0
+                        Logger.info("Playlist complete, looping back to first track")
+                    
+                    target_url = self.playlist_tracks[self.current_track_index]["url"]
+                    track_name = self.playlist_tracks[self.current_track_index]["name"]
+                    Logger.info(f"Advancing to track {self.current_track_index + 1}/{len(self.playlist_tracks)}: {track_name}")
+                else:
+                    Logger.info(f"Listen cycle finished for {title}. Restarting for loop...")
                 
             except Exception as e:
                 Logger.error(f"Loop error: {e}")
@@ -257,11 +342,12 @@ class SpotifyBot:
                 
                 # Phrases to ignore as titles (UI elements)
                 blacklisted_titles = [
-                    "install app", "premium", "login", 
-                    "home", "search", "library",
-                    "your library", "song", "artist", "views",
-                    "explore premium", "queue", "liked songs", "liked",
-                    "create playlist", "playlists", "albums", "podcasts"
+                    "install app", "premium", "login", "home", "search", "library",
+                    "your library", "song", "artist", "views", "explore premium", "queue",
+                    "liked songs", "liked", "create playlist", "playlists", "albums", "podcasts",
+                    "app installieren", "anmelden", "startseite", "suche", "bibliothek",
+                    "deine bibliothek", "kitaplığın", "tu biblioteca", "şarkı", "sanatçı",
+                    "aufrufe", "premium entdecken", "warteschlange", "playlist erstellen"
                 ]
 
                 for selector in title_selectors:
@@ -313,6 +399,8 @@ class SpotifyBot:
             pause_indicators = [
                 "button[data-testid='control-button-pause']",
                 "button[aria-label='Pause']",
+                "button[aria-label='Duraklat']",
+                "button[aria-label='Anhalten']",
                 "[data-testid='now-playing-menu'] [aria-label='Pause']",
                 "button > svg > path[d*='M5.7 3h-1.4v18h1.4v-18zm8.3 0h-1.4v18h1.4v-18z']" # Universal Pause Path
             ]
@@ -380,7 +468,10 @@ class SpotifyBot:
             "button[data-testid='play-button']", # Large Circle Play
             "button[data-testid='control-button-play']", # Bottom Bar Play
             "button[aria-label='Play']",
+            "button[aria-label='Oynat']",
+            "button[aria-label='Abspielen']",
             "main button[aria-label*='Play']",
+            "main button[aria-label*='Oynat']",
             "button > svg > path[d*='M7.05 3.606l13.49 7.79a.7.7 0 010 1.208l-13.49 7.79a.7.7 0 01-1.05-.604V4.21a.7.7 0 011.05-.604z']" # Play Path
         ]
         
@@ -400,7 +491,7 @@ class SpotifyBot:
                 for btn in elements:
                     if btn.is_displayed():
                         label = btn.get_attribute("aria-label")
-                        if label and "Pause" in label:
+                        if label and any(x in label for x in ["Pause", "Duraklat", "Anhalten"]):
                             Logger.debug(f"Playback already active (indicated by button label: '{label}')")
                             return True
                             
@@ -427,7 +518,7 @@ class SpotifyBot:
             
             btn = btn_elements[0]
             # Common labels for "Repeat One"
-            target_labels = ["Enable repeat one", "Repeat one"]
+            target_labels = ["Enable repeat one", "Repeat one", "Titel wiederholen", "Teke düşür"]
             
             # Max 3 clicks to cycle through Off -> All -> One
             for _ in range(3):
@@ -456,7 +547,7 @@ class SpotifyBot:
             btn = btn_elements[0]
             label = btn.get_attribute("aria-label")
             # Common labels for "Unmute" (meaning it's currently muted)
-            muted_labels = ["Unmute"]
+            muted_labels = ["Unmute", "Sesi aç", "Stummschaltung aufheben"]
             
             if any(target.lower() in label.lower() for target in muted_labels):
                 Logger.debug("Spotify UI is already MUTED.")
@@ -479,7 +570,8 @@ class SpotifyBot:
             "a[href*='/premium']",
             "button[aria-label*='Premium']",
             "button[aria-label*='Upgrade']",
-            "//*[contains(text(), 'Explore Premium')]"
+            "//*[contains(text(), 'Explore Premium')]",
+            "//*[contains(text(), 'Premium\\'u Keşfet')]"
         ]
         
         for selector in selectors:
@@ -494,7 +586,7 @@ class SpotifyBot:
                         # Extra check: sometimes "Premium" is just in the name but not the button.
                         # We look for "Explore", "Upgrade", "Buy" etc.
                         txt = e.text.lower()
-                        if any(x in txt for x in ["premium", "upgrade", "explore", "buy", "purchase"]):
+                        if any(x in txt for x in ["premium", "upgrade", "explore", "buy", "purchase", "keşfet"]):
                             Logger.info(f"Account Type: FREE (Indicator found: '{selector}')")
                             return False
             except: pass

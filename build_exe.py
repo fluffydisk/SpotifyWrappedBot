@@ -9,7 +9,7 @@ def build():
     args = [
         'main.py',
         '--name=SpotifyWrappedBot',        # Name of the executable
-        '--onedir',                        # Directory based build (easier for debugging)
+        '--onefile',                        # Directory based build (easier for debugging)
         '--noconsole',                     # Hide console (GUI app)
         '--clean',                         # Clean cache
         '--add-data=src:src',              # Include source code if dynamically loaded
