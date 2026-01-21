@@ -4,12 +4,13 @@ from src.utils.logger import Logger
 class ProfilePage(ctk.CTkFrame):
     """Profile and statistics page UI."""
     
-    def __init__(self, parent, stats_manager, on_logout_callback, on_back_callback):
+    def __init__(self, parent, stats_manager, on_logout_callback=None, on_back=None):
         super().__init__(parent, fg_color="#121212")
         
         self.stats_manager = stats_manager
+        # Handle cases where callbacks might be missing or passed with different names
         self.on_logout_callback = on_logout_callback
-        self.on_back_callback = on_back_callback
+        self.on_back_callback = on_back
         
         self._build_ui()
     
@@ -184,30 +185,15 @@ class ProfilePage(ctk.CTkFrame):
             )
             no_data_label.pack(pady=20)
         
-        # Bottom actions
-        actions_frame = ctk.CTkFrame(self, fg_color="transparent", height=80)
+        # Bottom actions - Just Refresh Button
+        actions_frame = ctk.CTkFrame(self, fg_color="transparent")
         actions_frame.pack(fill="x", padx=20, pady=(10, 20))
-        actions_frame.pack_propagate(False)
         
-        # Logout button
-        logout_btn = ctk.CTkButton(
-            actions_frame,
-            text="🚪 Log Out",
-            width=200,
-            height=45,
-            fg_color="#e91429",
-            hover_color="#d81326",
-            command=self.on_logout_callback,
-            font=("Segoe UI", 14, "bold"),
-            corner_radius=22
-        )
-        logout_btn.pack(side="left", pady=15)
-        
-        # Refresh button
+        # Refresh button - Centered and consistent width
         refresh_btn = ctk.CTkButton(
             actions_frame,
-            text="🔄 Refresh Stats",
-            width=200,
+            text="🔄 Refresh Statistics",
+            width=250,
             height=45,
             fg_color="#1DB954",
             hover_color="#1ed760",
@@ -215,7 +201,7 @@ class ProfilePage(ctk.CTkFrame):
             font=("Segoe UI", 14, "bold"),
             corner_radius=22
         )
-        refresh_btn.pack(side="right", pady=15)
+        refresh_btn.pack(pady=15)
     
     def refresh_stats(self):
         """Refresh the statistics display."""

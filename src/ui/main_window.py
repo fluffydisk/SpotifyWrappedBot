@@ -8,6 +8,7 @@ from src.utils.logger import Logger
 from PIL import Image, ImageTk
 import requests
 from io import BytesIO
+from src.ui.profile_page import ProfilePage
 
 # ══════════════════════════════════════════════════════════════════════════════
 # THEME CONFIGURATION - Modern Dark Mode
@@ -207,13 +208,28 @@ class MainWindow(ctk.CTk):
                 border_width=1, 
                 border_color=COLORS["border"], 
                 corner_radius=8,
-                width=140,
-                height=45
+                width=150,
+                height=85
             )
             self.profile_menu.pack_propagate(False)
             self.profile_menu_visible = False
             
-            # Logout option
+            # Profile Option
+            self.menu_profile_btn = ctk.CTkButton(
+                self.profile_menu,
+                text="  Profile",
+                font=ctk.CTkFont(size=13),
+                fg_color="transparent",
+                hover_color=COLORS["bg_input"],
+                text_color=COLORS["text_primary"],
+                anchor="w",
+                height=35,
+                corner_radius=4,
+                command=self._show_profile_page
+            )
+            self.menu_profile_btn.pack(fill="x", padx=5, pady=(5, 2))
+            
+            # Logout Option
             self.menu_logout_btn = ctk.CTkButton(
                 self.profile_menu,
                 text="  Log out",
@@ -226,7 +242,7 @@ class MainWindow(ctk.CTk):
                 corner_radius=4,
                 command=self.on_logout_click
             )
-            self.menu_logout_btn.pack(fill="x", padx=5, pady=5)
+            self.menu_logout_btn.pack(fill="x", padx=5, pady=(2, 5))
 
     def _toggle_profile_menu(self):
         """Toggles the visibility of the profile dropdown menu."""
@@ -552,3 +568,36 @@ class MainWindow(ctk.CTk):
         except Exception as e:
             Logger.debug(f"Cookie cleanup failed: {e}")
             Logger.info("Logged out.")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PAGE NAVIGATION
+    # ══════════════════════════════════════════════════════════════════════════
+    def _show_profile_page(self):
+        """Switches the view to the Profile Page."""
+        if hasattr(self, 'profile_menu'):
+            self.profile_menu.place_forget()
+            self.profile_menu_visible = False
+            
+        # Hide main frame
+        self.main_frame.pack_forget()
+        
+        # Initialize or show profile page
+        # Initialize or show profile page
+        if not hasattr(self, 'profile_page'):
+            self.profile_page = ProfilePage(
+                self, 
+                stats_manager=self.bot.stats, 
+                on_logout_callback=self.on_logout_click,
+                on_back=self._show_main_view
+            )
+        else:
+            self.profile_page.refresh_stats()
+            
+        self.profile_page.pack(fill="both", expand=True)
+
+    def _show_main_view(self):
+        """Switches the view back to the Main Dashboard."""
+        if hasattr(self, 'profile_page'):
+            self.profile_page.pack_forget()
+            
+        self.main_frame.pack(fill="both", expand=True, padx=30, pady=25)

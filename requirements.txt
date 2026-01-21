@@ -5,3 +5,4 @@ webdriver-manager
 pyinstaller
 pyinstaller-hooks-contrib
 Pillow
+colorama>=0.4.6
