@@ -142,63 +142,91 @@ class MainWindow(ctk.CTk):
             avatar_url = profile_data.get("avatar")
             
             # 1. Profile Card (Clickable)
-            self.profile_card = ctk.CTkFrame(self.profile_wrapper, fg_color=COLORS["bg_card"], height=40, corner_radius=20, cursor="hand2")
+            self.profile_card = ctk.CTkFrame(
+                self.profile_wrapper, 
+                fg_color=COLORS["bg_card"], 
+                height=42, 
+                corner_radius=21, 
+                cursor="hand2",
+                border_width=1,
+                border_color=COLORS["border"]
+            )
             self.profile_card.pack(side="top", anchor="e")
             
-            # Avatar
+            # Avatar (Right)
             if avatar_url:
                 try:
                     response = requests.get(avatar_url, timeout=5)
                     img_data = Image.open(BytesIO(response.content))
-                    avatar_img = ctk.CTkImage(light_image=img_data, dark_image=img_data, size=(28, 28))
+                    avatar_img = ctk.CTkImage(light_image=img_data, dark_image=img_data, size=(30, 30))
                     avatar_lbl = ctk.CTkLabel(self.profile_card, image=avatar_img, text="")
-                    avatar_lbl.pack(side="right", padx=(5, 5))
-                    avatar_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
                 except:
-                    avatar_lbl = ctk.CTkLabel(self.profile_card, text=name[0].upper(), fg_color=COLORS["accent_primary"], text_color=COLORS["bg_dark"], width=28, height=28, corner_radius=14)
-                    avatar_lbl.pack(side="right", padx=(5, 5))
-                    avatar_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
+                    avatar_lbl = ctk.CTkLabel(
+                        self.profile_card, 
+                        text=name[0].upper(), 
+                        fg_color=COLORS["accent_primary"], 
+                        text_color=COLORS["bg_dark"], 
+                        width=30, 
+                        height=30, 
+                        corner_radius=15,
+                        font=ctk.CTkFont(size=14, weight="bold")
+                    )
             else:
-                avatar_lbl = ctk.CTkLabel(self.profile_card, text=name[0].upper(), fg_color=COLORS["accent_primary"], text_color=COLORS["bg_dark"], width=28, height=28, corner_radius=14)
-                avatar_lbl.pack(side="right", padx=(5, 5))
-                avatar_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
-                
-            # Name
-            name_lbl = ctk.CTkLabel(self.profile_card, text=name, font=ctk.CTkFont(size=12, weight="bold"), text_color=COLORS["text_primary"])
-            name_lbl.pack(side="left", padx=(15, 5))
-            name_lbl.bind("<Button-1>", lambda e: self._toggle_profile_menu())
-
-            # Bind click event to card itself
-            self.profile_card.bind("<Button-1>", lambda e: self._toggle_profile_menu())
+                avatar_lbl = ctk.CTkLabel(
+                    self.profile_card, 
+                    text=name[0].upper(), 
+                    fg_color=COLORS["accent_primary"], 
+                    text_color=COLORS["bg_dark"], 
+                    width=30, 
+                    height=30, 
+                    corner_radius=15,
+                    font=ctk.CTkFont(size=14, weight="bold")
+                )
+            
+            avatar_lbl.pack(side="right", padx=(5, 6), pady=5)
+            
+            # Name (Left)
+            name_lbl = ctk.CTkLabel(
+                self.profile_card, 
+                text=name, 
+                font=ctk.CTkFont(family="Segoe UI", size=13, weight="bold"), 
+                text_color=COLORS["text_primary"]
+            )
+            name_lbl.pack(side="right", padx=(12, 5))
+            
+            # Bind click events
+            for widget in [self.profile_card, name_lbl, avatar_lbl]:
+                widget.bind("<Button-1>", lambda e: self._toggle_profile_menu())
+                widget.bind("<Enter>", lambda e: self.profile_card.configure(fg_color=COLORS["border"], border_color=COLORS["text_secondary"]))
+                widget.bind("<Leave>", lambda e: self.profile_card.configure(fg_color=COLORS["bg_card"], border_color=COLORS["border"]))
 
             # 2. Dropdown Menu (Hidden by default)
-            # Use main_frame as parent for easier relative positioning
             self.profile_menu = ctk.CTkFrame(
                 self.main_frame, 
                 fg_color=COLORS["bg_card"], 
                 border_width=1, 
                 border_color=COLORS["border"], 
                 corner_radius=8,
-                width=120,
-                height=40  # Compact height for a single menu item
+                width=140,
+                height=45
             )
-            self.profile_menu.pack_propagate(False) # Keep fixed size
+            self.profile_menu.pack_propagate(False)
             self.profile_menu_visible = False
             
-            # Logout option in menu
+            # Logout option
             self.menu_logout_btn = ctk.CTkButton(
                 self.profile_menu,
-                text="Log out",
+                text="  Log out",
                 font=ctk.CTkFont(size=13),
                 fg_color="transparent",
-                hover_color=COLORS["bg_dark"],
+                hover_color=COLORS["danger"],
                 text_color=COLORS["text_primary"],
                 anchor="w",
-                height=32,
+                height=35,
                 corner_radius=4,
                 command=self.on_logout_click
             )
-            self.menu_logout_btn.pack(fill="x", padx=4, pady=4)
+            self.menu_logout_btn.pack(fill="x", padx=5, pady=5)
 
     def _toggle_profile_menu(self):
         """Toggles the visibility of the profile dropdown menu."""
@@ -208,22 +236,9 @@ class MainWindow(ctk.CTk):
             self.profile_menu.place_forget()
             self.profile_menu_visible = False
         else:
-            self.update_idletasks()
-            
-            # Get geometry of wrapper relative to its parent (header_frame)
-            # which is at the top of main_frame
-            wrapper_w = self.profile_wrapper.winfo_width()
-            wrapper_h = self.profile_wrapper.winfo_height()
-            
-            # Menu width
-            menu_width = 120
-            
-            # Position it at the very right edge of the window (relative to main_frame)
-            # The profile_wrapper is placed at relx=1.0 in header_frame
-            x = self.main_frame.winfo_width() - menu_width
-            y = wrapper_h + 5 # Just below the profile wrapper
-            
-            self.profile_menu.place(x=x, y=y)
+            # Position relative to the window top-right
+            # self.profile_wrapper is at top-right
+            self.profile_menu.place(relx=0.98, y=65, anchor="ne")
             self.profile_menu.lift()
             self.profile_menu_visible = True
 
