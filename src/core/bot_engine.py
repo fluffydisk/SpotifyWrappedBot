@@ -6,6 +6,7 @@ import os
 from src.core.browser_mgr import BrowserManager
 from src.utils.logger import Logger
 from src.utils.humanizer import Humanizer
+from src.core.stats_manager import StatisticsManager
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -26,6 +27,19 @@ class SpotifyBot:
         self.playlist_tracks = []
         self.current_track_index = 0
         self.playlist_state_file = "playlist_state.json"
+        
+        # Statistics tracking
+        self.stats = StatisticsManager()
+
+    def has_valid_session(self):
+        """
+        Check if cookies exist for authentication.
+        
+        Returns:
+            bool: True if session cookies are available
+        """
+        profile_dir = self.settings.get('profile_dir', 'spotify_profile')
+        return BrowserManager.has_cookies(profile_dir)
 
     def launch_native_login(self):
         """Launches a controlled browser for login and returns (success, profile_data)."""
@@ -62,6 +76,32 @@ class SpotifyBot:
                 self.browser.get("https://accounts.spotify.com/en/login")
             else:
                 self.browser.get("https://open.spotify.com/")
+            
+            # CRITICAL: Mute all audio elements via JavaScript
+            try:
+                self.browser.execute_script("""
+                    // Mute all existing audio/video elements
+                    document.querySelectorAll('audio, video').forEach(el => {
+                        el.muted = true;
+                        el.volume = 0;
+                    });
+                    
+                    // Watch for new audio/video elements
+                    const observer = new MutationObserver(mutations => {
+                        document.querySelectorAll('audio, video').forEach(el => {
+                            el.muted = true;
+                            el.volume = 0;
+                        });
+                    });
+                    
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                    });
+                """)
+                Logger.info("Browser audio muted successfully (JS verification)")
+            except Exception as e:
+                Logger.warning(f"Could not verify audio muting: {e}")
                 
             # Start Background Watcher
             self.start_watcher()

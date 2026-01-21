@@ -426,45 +426,50 @@ class MainWindow(ctk.CTk):
     # EVENT HANDLERS
     # ══════════════════════════════════════════════════════════════════════════
     def on_launch_click(self):
-        self._set_status("Checking browsers...", COLORS["text_secondary"])
-        if hasattr(self, 'login_btn') and self.login_btn:
-            self.login_btn.configure(state="disabled")
-        threading.Thread(target=self._login_task, daemon=True).start()
-
-    def _login_task(self):
-        try:
-            # 1. Ensure browser is available
-            if not BrowserManager.ensure_browser_installed():
-                Logger.error("No browser found. Install Chrome or Firefox.")
-                self.after(0, lambda: self._set_status("No Browser Found", COLORS["danger"]))
-                if hasattr(self, 'login_btn') and self.login_btn:
-                    self.after(0, lambda: self.login_btn.configure(state="normal"))
-                return
-
-            if not self.bot:
-                self.bot = SpotifyBot({"profile_dir": "spotify_profile"})
-            
-            # 2. Launch Controlled Login
-            self.after(0, lambda: self._set_status("Logging in...", COLORS["accent_primary"]))
-            
-            success, profile_data = self.bot.launch_native_login()
-            if success:
-                Logger.info("Login successful. Ready to start bot.")
-                self.logged_in = True  # Mark as logged in
-                self.after(0, lambda: self._update_profile_ui(profile_data))
-                self.after(0, lambda: self._set_status("Logged In ✓", COLORS["accent_primary"]))
-                self.after(0, lambda: self.start_btn.configure(state="normal"))
-                self.after(0, lambda: self.stop_btn.configure(state="normal"))
-            else:
-                self.after(0, lambda: self._set_status("Login Failed", COLORS["danger"]))
-                if hasattr(self, 'login_btn') and self.login_btn:
-                    self.after(0, lambda: self.login_btn.configure(state="normal"))
-
-        except Exception as e:
-            Logger.error(f"Login error: {e}")
+        """Handle login button click - open cookie import dialog or auto-login"""
+        # Initialize bot if needed
+        if not self.bot:
+            self.bot = SpotifyBot({"profile_dir": "spotify_profile"})
+        
+        # Check if cookies already exist
+        if self.bot.has_valid_session():
+            Logger.info("Existing session found. Auto-logging in...")
+            self._set_status("Logged In ✓", COLORS["accent_primary"])
+            self.logged_in = True
             if hasattr(self, 'login_btn') and self.login_btn:
-                self.after(0, lambda: self.login_btn.configure(state="normal"))
-            self.after(0, lambda: self._set_status("Error", COLORS["danger"]))
+                # Update profile UI with default data
+                self._update_profile_ui({"name": "Spotify User", "avatar": None})
+            self.start_btn.configure(state="normal")
+            self.stop_btn.configure(state="normal")
+            return
+        
+        # No cookies - open import dialog
+        from src.ui.cookie_dialog import CookieDialog
+        
+        dialog = CookieDialog(self, on_success=self._on_cookies_imported)
+        # Dialog is modal, wait for it to close
+    
+    def _on_cookies_imported(self, cookies):
+        """Callback when cookies are successfully imported"""
+        try:
+            # Save cookies
+            BrowserManager.save_cookies(cookies, "spotify_profile")
+            
+            # Update UI
+            Logger.info("Cookies imported successfully. Session ready!")
+            self.logged_in = True
+            self._set_status("Logged In ✓", COLORS["accent_primary"])
+            
+            # Update profile UI
+            self._update_profile_ui({"name": "Spotify User", "avatar": None})
+            
+            # Enable buttons
+            self.start_btn.configure(state="normal")
+            self.stop_btn.configure(state="normal")
+            
+        except Exception as e:
+            Logger.error(f"Failed to save cookies: {e}")
+            self._set_status("Cookie Save Failed", COLORS["danger"])
 
     def on_start_click(self):
         url = self.url_entry.get()
@@ -521,12 +526,14 @@ class MainWindow(ctk.CTk):
         self.start_btn.configure(state="disabled")
         self.stop_btn.configure(state="disabled")
         
-        # Optional: Delete profile folder to allow clean switching
+        # Delete only cookies.json (not entire profile directory)
         try:
-            profile_dir = "spotify_profile"
-            if os.path.exists(profile_dir):
-                shutil.rmtree(profile_dir)
-                Logger.info("Logged out and profile cleared.")
+            cookie_file = os.path.join("spotify_profile", "cookies.json")
+            if os.path.exists(cookie_file):
+                os.remove(cookie_file)
+                Logger.info("Logged out and session cleared.")
+            else:
+                Logger.info("Logged out.")
         except Exception as e:
-            Logger.debug(f"Profile cleanup failed: {e}")
+            Logger.debug(f"Cookie cleanup failed: {e}")
             Logger.info("Logged out.")

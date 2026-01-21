@@ -1,11 +1,7 @@
-undetected-chromedriver
 customtkinter
 requests
 selenium
-fake-useragent
-setuptools
 webdriver-manager
-playwright
 pyinstaller
 pyinstaller-hooks-contrib
 Pillow
