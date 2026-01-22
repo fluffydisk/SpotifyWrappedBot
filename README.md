@@ -16,7 +16,7 @@ A robust, GUI-based Spotify automation bot designed for controlled listening and
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/SpotifyWrapped.git
+   git clone https://github.com/fluffydisk/SpotifyWrappedBot.git
    cd SpotifyWrapped
    ```
 
